@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  username      String         @unique
+  password      String
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  bookings      Booking[]
+  refreshTokens RefreshToken[]
+  sessionLogs   SessionLog[]
+
+  @@map("users")
+}
+
+model Guest {
+  id            Int           @id @default(autoincrement())
+  fullName      String
+  email         String?
+  bookingId     Int           @unique(map: "guest_bookingid_unique")
+  roomId        Int?
+  status        String        @default("Reserved")
+  paymentStatus PaymentStatus @default(PENDING)
+  finalPrice    Decimal?      @db.Decimal(10, 2)
+  dealId        Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  room    Room?   @relation(fields: [roomId], references: [id])
+  deal    Deal?   @relation("GuestToDeal", fields: [dealId], references: [id], onDelete: SetNull) // ✅ FIX
+
+  @@index([roomId], map: "Guest_roomId_fkey")
+}
+
+model Room {
+  id          Int         @id @default(autoincrement())
+  roomNumber  String      @unique
+  floor       String?
+  type        rooms_type
+  price       Decimal     @db.Decimal(10, 2)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  description String?     @db.Text
+  imageUrl    String?     @default("/uploads/rooms/default.jpg")
+  capacity    Int         @default(1)
+  cleanStatus CleanStatus @default(CLEAN)
+
+  guests   Guest[]
+  rates    Rate[]
+  bookings Booking[]
+  features RoomFeatureMap[]
+
+  @@map("rooms")
+}
+
+model Booking {
+  id                Int                   @id @default(autoincrement())
+  userId            Int
+  roomId            Int
+  startDate         DateTime
+  endDate           DateTime
+  status            BookingStatus         @default(PENDING)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  customerFirstName String?               @db.VarChar(100)
+  customerLastName  String?               @db.VarChar(100)
+  customerEmail     String?
+  paymentType       bookings_paymentType?
+  paymentStatus     PaymentStatus         @default(PENDING)
+  baseRate          Decimal?              @db.Decimal(10, 2)
+  finalPrice        Decimal?              @db.Decimal(10, 2)
+  dealId            Int?
+
+  guests Guest?
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal   Deal?  @relation("BookingToDeal", fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@index([roomId], map: "bookings_roomId_fkey")
+  @@index([userId], map: "bookings_userId_fkey")
+  @@index([dealId], map: "bookings_dealId_fkey")
+  @@map("bookings")
+}
+
+model RoomFeature {
+  id        Int               @id @default(autoincrement())
+  name      String            @db.VarChar(100)
+  rooms     RoomFeatureMap[]
+  roomTypes RoomTypeFeature[]
+
+  @@map("room_features")
+}
+
+model RoomFeatureMap {
+  id        Int         @id @default(autoincrement())
+  roomId    Int
+  featureId Int
+  room      Room        @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "room_feature_map_ibfk_1")
+  feature   RoomFeature @relation(fields: [featureId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "room_feature_map_ibfk_2")
+
+  @@unique([roomId, featureId], map: "unique_room_feature")
+  @@index([featureId], map: "featureId")
+  @@map("room_feature_map")
+}
+
+model RoomTypeFeature {
+  id        Int         @id @default(autoincrement())
+  roomType  String      @db.VarChar(50)
+  featureId Int
+  feature   RoomFeature @relation(fields: [featureId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "room_type_features_ibfk_1")
+
+  @@index([featureId], map: "featureId")
+  @@map("room_type_features")
+}
+
+model Deal {
+  id        Int            @id @default(autoincrement())
+  name      String
+  discount  Int
+  status    deals_status?  @default(ONGOING)
+  endDate   DateTime?      @db.Date
+  roomType  deals_roomType
+  createdAt DateTime?      @default(now()) @db.Timestamp(0)
+  updatedAt DateTime?      @default(now()) @db.Timestamp(0)
+
+  rates    Rate[]
+  bookings Booking[] @relation("BookingToDeal")
+  guests   Guest[]   @relation("GuestToDeal")
+}
+
+model Rate {
+  id        Int          @id @default(autoincrement())
+  roomId    Int
+  policy    rates_policy
+  rate      Decimal      @db.Decimal(10, 2)
+  dealPrice Decimal?     @db.Decimal(10, 2)
+  dealId    Int?
+  createdAt DateTime?    @default(now()) @db.Timestamp(0)
+  updatedAt DateTime?    @default(now()) @db.Timestamp(0)
+
+  room Room  @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  deal Deal? @relation(fields: [dealId], references: [id], onDelete: SetNull) 
+
+  @@index([roomId], map: "Rate_roomId_fkey")
+  @@index([dealId], map: "Rate_dealId_fkey")
+}
+
+model Contact {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum rooms_type {
+  SINGLE
+  DOUBLE
+  SUITE
+  DELUXE
+}
+
+enum bookings_paymentType {
+  CARD
+  CASH
+  PAYPAL
+}
+
+enum rates_policy {
+  STRICT
+  FLEXIBLE
+  NON_REFUNDABLE
+}
+
+enum deals_status {
+  ONGOING
+  FULL
+  INACTIVE
+}
+
+enum deals_roomType {
+  SINGLE
+  DOUBLE
+  SUITE
+  DELUXE
+  ALL
+}
+
+enum CleanStatus {
+  CLEAN
+  DIRTY
+  IN_PROGRESS
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+
+  @@map("refresh_tokens")
+}
+
+model SessionLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  action    String // LOGIN, REFRESH, LOGOUT
+  ipAddress String? // optional (will auto-capture from req.ip)
+  userAgent String? // optional (browser info)
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session_logs")
+}
